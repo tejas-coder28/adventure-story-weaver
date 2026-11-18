@@ -11,3 +11,6 @@ __pycache__/
 data/raw/
 data/*.json
 *.db
+
+# Model checkpoints
+checkpoints/

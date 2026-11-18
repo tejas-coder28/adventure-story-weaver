@@ -20,7 +20,7 @@ Tick these off as you go, and commit after each one.
       Hint: Byte-pair tokenization and embedding layers.
 - [x] **3. Build the causal self-attention mechanism and assemble the transformer block.**  
       Hint: Causal self-attention and transformer block construction.
-- [ ] **4. Set up the training loop and train the GPT model on the narrative data.**  
+- [x] **4. Set up the training loop and train the GPT model on the narrative data.**  
       Hint: Training loop and gradient descent.
 - [ ] **5. Implement a text generation feature that creates coherent story continuations.**  
       Hint: Text generation with sampling strategies.

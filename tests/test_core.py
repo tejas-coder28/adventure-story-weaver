@@ -250,9 +250,83 @@ def test_gpt_causality():
 
 
 # Milestone 4: Set up the training loop and train the GPT model on the narrative data.
-@pytest.mark.skip(reason="remove this line when you start milestone 4")
-def test_milestone_4():
-    raise NotImplementedError("write the test for milestone 4")
+def test_milestone_4(tmp_path):
+    import torch
+    from app.core import milestone_4
+
+    ckpt_file = tmp_path / "model.pt"
+    result = milestone_4(
+        checkpoint_path=str(ckpt_file),
+        max_steps=4,
+        batch_size=2,
+    )
+    assert result["model"] is not None
+    assert result["best_val_loss"] > 0
+    assert ckpt_file.exists(), "Checkpoint file was not created"
+
+    # Verify checkpoint contents
+    ckpt = torch.load(ckpt_file, weights_only=False)
+    assert "model_state_dict" in ckpt
+    assert "config" in ckpt
+    assert "tokenizer_path" in ckpt
+    assert "val_loss" in ckpt
+
+
+def test_overfit_tiny_batch_loss_decreases():
+    """Verifies optimization loop by proving loss strictly decreases on a tiny fixed batch."""
+    import torch
+    from app.model import GPT, GPTConfig
+
+    torch.manual_seed(42)
+    config = GPTConfig(
+        vocab_size=100,
+        block_size=16,
+        n_layer=2,
+        n_head=2,
+        n_embd=32,
+        dropout=0.0,
+    )
+    model = GPT(config)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.01)
+
+    # Fixed synthetic batch
+    x = torch.randint(0, 100, (2, 8))
+    y = torch.randint(0, 100, (2, 8))
+
+    initial_loss = None
+    final_loss = None
+
+    for step in range(25):
+        optimizer.zero_grad()
+        _, loss = model(x, y)
+        if step == 0:
+            initial_loss = loss.item()
+        loss.backward()
+        optimizer.step()
+        final_loss = loss.item()
+
+    assert initial_loss is not None and final_loss is not None
+    assert final_loss < initial_loss * 0.5, (
+        f"Loss did not decrease sufficiently: started at {initial_loss:.4f}, ended at {final_loss:.4f}"
+    )
+
+
+def test_get_batch_shifted_targets():
+    """Verifies that get_batch returns x and y where y is x shifted by exactly 1 token."""
+    import torch
+    from app.train import get_batch
+
+    # Sequential token stream 0, 1, 2, ..., 99
+    train_data = torch.arange(100, dtype=torch.long)
+    val_data = torch.arange(100, 150, dtype=torch.long)
+
+    x, y = get_batch("train", train_data, val_data, batch_size=4, block_size=16, device=torch.device("cpu"))
+    assert x.shape == (4, 16)
+    assert y.shape == (4, 16)
+
+    # For each row, y[0:T-1] should match x[1:T]
+    for b in range(4):
+        assert torch.equal(x[b, 1:], y[b, :-1]), "Target y is not x shifted by +1"
 
 
 # Milestone 5: Implement a text generation feature that creates coherent story continuations.

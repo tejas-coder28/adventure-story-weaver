@@ -21,6 +21,7 @@ from app.model import (
     TransformerBlock,
     GPT,
 )
+from app.train import train, get_batch, estimate_loss, load_dataset
 
 
 # --- Milestone 1: Assemble a small corpus of text from public domain adventure stories or fantasy novels.
@@ -102,8 +103,33 @@ def milestone_3(config: GPTConfig | None = None) -> GPT:
 
 # --- Milestone 4: Set up the training loop and train the GPT model on the narrative data.
 # Hint: Training loop and gradient descent.
-def milestone_4():  # TODO(milestone 4)
-    raise NotImplementedError("TODO(milestone 4)")
+def milestone_4(
+    corpus_path: str = "data/corpus.txt",
+    tokenizer_path: str = "artifacts/tokenizer.json",
+    checkpoint_path: str = "checkpoints/model.pt",
+    max_steps: int = 10,
+    batch_size: int = 4,
+    learning_rate: float = 1e-3,
+) -> dict:
+    """Milestone 4: Run training loop and train the GPT model on narrative data.
+
+    Returns:
+        Dictionary containing trained model, config, history, and checkpoint path.
+    """
+    return train(
+        corpus_path=corpus_path,
+        tokenizer_path=tokenizer_path,
+        checkpoint_path=checkpoint_path,
+        max_steps=max_steps,
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        eval_interval=max_steps,
+        eval_iters=2,
+        block_size=32,
+        n_layer=2,
+        n_head=2,
+        n_embd=32,
+    )
 
 
 # --- Milestone 5: Implement a text generation feature that creates coherent story continuations.
