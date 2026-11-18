@@ -22,7 +22,7 @@ from app.model import (
     GPT,
 )
 from app.train import train, get_batch, estimate_loss, load_dataset
-from app.generate import generate, load_checkpoint, validate_generation_params
+from app.generate import generate, generate_ids, load_checkpoint, validate_generation_params
 
 
 # --- Milestone 1: Assemble a small corpus of text from public domain adventure stories or fantasy novels.

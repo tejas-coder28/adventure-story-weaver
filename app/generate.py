@@ -76,7 +76,7 @@ def load_checkpoint(
     return model, tokenizer
 
 
-def generate(
+def generate_ids(
     model: nn.Module,
     tokenizer: BPETokenizer,
     prompt: str = "",
@@ -86,12 +86,12 @@ def generate(
     top_p: float | None = None,
     seed: int | None = None,
     device: torch.device | None = None,
-) -> str:
-    """Generates autoregressive story continuations given a prompt string.
+) -> list[int]:
+    """Generates autoregressive token IDs given a prompt string.
 
     Args:
         model: GPT model.
-        tokenizer: BPETokenizer for encoding prompt and decoding generated tokens.
+        tokenizer: BPETokenizer for encoding prompt.
         prompt: Initial text string.
         max_new_tokens: Number of subsequent tokens to generate.
         temperature: Sampling randomness (0.0 = greedy argmax, > 0 = random sampling).
@@ -101,7 +101,7 @@ def generate(
         device: Device on which model is running.
 
     Returns:
-        The prompt string combined with the generated continuation text.
+        List of integer token IDs (prompt tokens + newly generated tokens).
     """
     validate_generation_params(
         max_new_tokens=max_new_tokens,
@@ -109,9 +109,6 @@ def generate(
         top_k=top_k,
         top_p=top_p,
     )
-
-    if max_new_tokens == 0:
-        return prompt
 
     if device is None:
         try:
@@ -133,6 +130,9 @@ def generate(
         # If prompt is empty, start from endoftext token or 0
         special_id = tokenizer.special_tokens.get("<|endoftext|>")
         prompt_ids = [special_id] if special_id is not None else [0]
+
+    if max_new_tokens == 0:
+        return prompt_ids if prompt else []
 
     idx = torch.tensor([prompt_ids], dtype=torch.long, device=device)
 
@@ -198,7 +198,6 @@ def generate(
     finally:
         model.train(was_training)
 
-    # Decode tokens back into text
     all_tokens = idx[0].tolist()
 
     # If prompt was empty, drop the synthetic start token if present
@@ -206,4 +205,49 @@ def generate(
         if all_tokens and all_tokens[0] == prompt_ids[0]:
             all_tokens = all_tokens[1:]
 
-    return tokenizer.decode(all_tokens)
+    return all_tokens
+
+
+def generate(
+    model: nn.Module,
+    tokenizer: BPETokenizer,
+    prompt: str = "",
+    max_new_tokens: int = 50,
+    temperature: float = 1.0,
+    top_k: int | None = None,
+    top_p: float | None = None,
+    seed: int | None = None,
+    device: torch.device | None = None,
+    return_ids: bool = False,
+) -> str | list[int]:
+    """Generates autoregressive story continuations given a prompt string.
+
+    Args:
+        model: GPT model.
+        tokenizer: BPETokenizer for encoding prompt and decoding generated tokens.
+        prompt: Initial text string.
+        max_new_tokens: Number of subsequent tokens to generate.
+        temperature: Sampling randomness (0.0 = greedy argmax, > 0 = random sampling).
+        top_k: Truncate sampling distribution to top K most probable tokens.
+        top_p: Nucleus sampling cumulative probability threshold.
+        seed: Random seed for reproducible output via torch.Generator.
+        device: Device on which model is running.
+        return_ids: If True, returns list of integer token IDs instead of decoded text.
+
+    Returns:
+        The prompt string combined with the generated continuation text, or token IDs.
+    """
+    token_ids = generate_ids(
+        model=model,
+        tokenizer=tokenizer,
+        prompt=prompt,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_k=top_k,
+        top_p=top_p,
+        seed=seed,
+        device=device,
+    )
+    if return_ids:
+        return token_ids
+    return tokenizer.decode(token_ids)

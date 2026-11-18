@@ -375,7 +375,7 @@ def test_generate_output_length_and_empty_prompt():
     """Verifies token continuation count and graceful handling of empty prompt."""
     from app.model import GPT, GPTConfig
     from app.tokenizer import BPETokenizer
-    from app.generate import generate
+    from app.generate import generate, generate_ids
 
     tok = BPETokenizer()
     tok.train("Ancient magic whispered through the crumbling stone halls.", vocab_size=300)
@@ -383,12 +383,16 @@ def test_generate_output_length_and_empty_prompt():
     config = GPTConfig(vocab_size=tok.vocab_size, block_size=32, n_layer=2, n_head=2, n_embd=32, dropout=0.0)
     model = GPT(config)
 
-    # Output length check
+    # Output length check directly asserting on generated token IDs
     prompt = "Ancient magic"
     prompt_tokens = tok.encode(prompt)
-    continuation = generate(model, tok, prompt=prompt, max_new_tokens=12, temperature=0.0)
-    total_tokens = tok.encode(continuation)
-    assert len(total_tokens) == len(prompt_tokens) + 12
+    gen_ids = generate_ids(model, tok, prompt=prompt, max_new_tokens=12, temperature=0.0)
+    assert len(gen_ids) == len(prompt_tokens) + 12
+
+    # Also verify return_ids=True flag on generate()
+    gen_ids_flag = generate(model, tok, prompt=prompt, max_new_tokens=12, temperature=0.0, return_ids=True)
+    assert len(gen_ids_flag) == len(prompt_tokens) + 12
+    assert gen_ids == gen_ids_flag
 
     # Empty prompt check
     empty_result = generate(model, tok, prompt="", max_new_tokens=8, temperature=0.0)
