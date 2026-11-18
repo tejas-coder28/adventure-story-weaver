@@ -152,9 +152,101 @@ def test_gpt_embedding_shapes_and_errors():
 
 
 # Milestone 3: Build the causal self-attention mechanism and assemble the transformer block.
-@pytest.mark.skip(reason="remove this line when you start milestone 3")
 def test_milestone_3():
-    raise NotImplementedError("write the test for milestone 3")
+    import torch
+    from app.core import milestone_3, GPTConfig, GPT
+
+    config = GPTConfig(
+        vocab_size=300,
+        block_size=32,
+        n_layer=2,
+        n_head=2,
+        n_embd=32,
+        dropout=0.0,
+    )
+    model = milestone_3(config)
+    assert isinstance(model, GPT)
+    assert model.get_num_params() > 0
+
+    # 1. Forward pass without targets: returns (logits, None)
+    B, T = 2, 8
+    idx = torch.randint(0, config.vocab_size, (B, T))
+    logits, loss = model(idx)
+    assert logits.shape == (B, T, config.vocab_size)
+    assert loss is None
+
+    # 2. Forward pass with targets: returns (logits, finite scalar loss)
+    targets = torch.randint(0, config.vocab_size, (B, T))
+    logits, loss = model(idx, targets=targets)
+    assert logits.shape == (B, T, config.vocab_size)
+    assert loss is not None
+    assert loss.dim() == 0  # scalar tensor
+    assert torch.isfinite(loss).item()
+
+    # 3. Verify backward pass computes gradients
+    loss.backward()
+    for name, p in model.named_parameters():
+        if p.requires_grad:
+            assert p.grad is not None, f"Parameter {name} has no gradient"
+
+
+def test_causal_self_attention_properties():
+    import pytest
+    import torch
+    from app.model import CausalSelfAttention, MLP, TransformerBlock
+
+    # Verify assertion on n_embd % n_head != 0
+    with pytest.raises(AssertionError, match="divisible"):
+        CausalSelfAttention(n_embd=65, n_head=4)
+
+    # Attention forward pass shape
+    attn = CausalSelfAttention(n_embd=48, n_head=4, block_size=32, dropout=0.0)
+    x = torch.randn(3, 12, 48)
+    out = attn(x)
+    assert out.shape == (3, 12, 48)
+
+    # MLP forward pass shape
+    mlp = MLP(n_embd=48, dropout=0.0)
+    mlp_out = mlp(x)
+    assert mlp_out.shape == (3, 12, 48)
+
+    # TransformerBlock forward pass shape
+    block = TransformerBlock(n_embd=48, n_head=4, block_size=32, dropout=0.0)
+    block_out = block(x)
+    assert block_out.shape == (3, 12, 48)
+
+
+def test_gpt_causality():
+    """Proves that changing a future token does not change the logits at earlier positions."""
+    import torch
+    from app.model import GPT, GPTConfig
+
+    config = GPTConfig(
+        vocab_size=200,
+        block_size=16,
+        n_layer=2,
+        n_head=2,
+        n_embd=32,
+        dropout=0.0,
+    )
+    model = GPT(config)
+    model.eval()  # Disable dropout to verify deterministic causality
+
+    # Two sequences identical up to position 2; token at position 3 differs
+    seq1 = torch.tensor([[15, 42, 88, 10]], dtype=torch.long)
+    seq2 = torch.tensor([[15, 42, 88, 99]], dtype=torch.long)
+
+    with torch.no_grad():
+        logits1, _ = model(seq1)
+        logits2, _ = model(seq2)
+
+    # Earlier positions (0, 1, 2) MUST produce exactly identical logits
+    max_diff_earlier = (logits1[:, :3, :] - logits2[:, :3, :]).abs().max().item()
+    assert max_diff_earlier < 1e-5, f"Causality violated: earlier logits changed by {max_diff_earlier}"
+
+    # Modified position (3) MUST produce different logits
+    max_diff_modified = (logits1[:, 3, :] - logits2[:, 3, :]).abs().max().item()
+    assert max_diff_modified > 1e-4, "Modified position did not affect logits"
 
 
 # Milestone 4: Set up the training loop and train the GPT model on the narrative data.

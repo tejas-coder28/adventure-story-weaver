@@ -10,11 +10,16 @@ from scripts.build_corpus import (
 
 from app.tokenizer import BPETokenizer, Tokenizer
 from app.model import (
+    GPTConfig,
     GPTEmbedding,
     GPTEmbeddings,
     TransformerEmbedding,
     EmbeddingLayer,
     StoryEmbedding,
+    CausalSelfAttention,
+    MLP,
+    TransformerBlock,
+    GPT,
 )
 
 
@@ -77,8 +82,22 @@ def milestone_2(
 
 # --- Milestone 3: Build the causal self-attention mechanism and assemble the transformer block.
 # Hint: Causal self-attention and transformer block construction.
-def milestone_3():  # TODO(milestone 3)
-    raise NotImplementedError("TODO(milestone 3)")
+def milestone_3(config: GPTConfig | None = None) -> GPT:
+    """Milestone 3: Build and return the initialized GPT model with causal self-attention.
+
+    Returns:
+        An initialized GPT model ready for training or evaluation.
+    """
+    if config is None:
+        config = GPTConfig(
+            vocab_size=1000,
+            block_size=128,
+            n_layer=4,
+            n_head=4,
+            n_embd=64,
+            dropout=0.1,
+        )
+    return GPT(config)
 
 
 # --- Milestone 4: Set up the training loop and train the GPT model on the narrative data.

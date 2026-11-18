@@ -18,7 +18,7 @@ Tick these off as you go, and commit after each one.
       Hint: Curating your raw text corpus.
 - [x] **2. Implement the byte-pair tokenizer and generate embeddings from the story text.**  
       Hint: Byte-pair tokenization and embedding layers.
-- [ ] **3. Build the causal self-attention mechanism and assemble the transformer block.**  
+- [x] **3. Build the causal self-attention mechanism and assemble the transformer block.**  
       Hint: Causal self-attention and transformer block construction.
 - [ ] **4. Set up the training loop and train the GPT model on the narrative data.**  
       Hint: Training loop and gradient descent.
