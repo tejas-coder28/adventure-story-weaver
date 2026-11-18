@@ -1,6 +1,6 @@
-# Adventure Story Weaver
+[![Built with askThili](https://msrit.ask.thili.ai/api/v1/public/projects/ksmrgqhbc8/badge.svg)](https://msrit.ask.thili.ai/b/ksmrgqhbc8)
 
-[![Built with askThili](https://ask.thili.ai/api/v1/public/projects/ksmrgqhbc8/badge.svg)](https://ask.thili.ai/b/ksmrgqhbc8)
+# Adventure Story Weaver
 
 **Adventure Story Weaver** is an autoregressive Generative Pretrained Transformer (GPT) language model built completely **from scratch in PyTorch** (no Hugging Face `transformers`, no `tiktoken`, and no high-level `nn.Transformer` or `nn.MultiheadAttention` modules).
 
