@@ -8,5 +8,6 @@ __pycache__/
 .pytest_cache/
 
 # Local data
-data/
+data/raw/
+data/*.json
 *.db

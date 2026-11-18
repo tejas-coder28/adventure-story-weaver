@@ -1,9 +1,26 @@
 """Your code. One stub per milestone; build them in order and keep each one small."""
+from pathlib import Path
+from scripts.build_corpus import (
+    strip_gutenberg_header_footer,
+    normalize_text,
+    clean_gutenberg_text,
+    build_corpus,
+)
+
 
 # --- Milestone 1: Assemble a small corpus of text from public domain adventure stories or fantasy novels.
 # Hint: Curating your raw text corpus.
-def milestone_1():  # TODO(milestone 1)
-    raise NotImplementedError("TODO(milestone 1)")
+def milestone_1(corpus_path: str = "data/corpus.txt") -> str:
+    """Milestone 1: Read and return the curated adventure stories corpus.
+
+    Ensures the corpus exists, is non-empty, and does not contain Project Gutenberg license headers.
+    """
+    path = Path(corpus_path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Corpus file not found at '{path}'. Run python scripts/build_corpus.py to generate it."
+        )
+    return path.read_text(encoding="utf-8")
 
 
 # --- Milestone 2: Implement the byte-pair tokenizer and generate embeddings from the story text.
