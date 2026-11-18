@@ -330,9 +330,98 @@ def test_get_batch_shifted_targets():
 
 
 # Milestone 5: Implement a text generation feature that creates coherent story continuations.
-@pytest.mark.skip(reason="remove this line when you start milestone 5")
 def test_milestone_5():
-    raise NotImplementedError("write the test for milestone 5")
+    from app.core import milestone_5
+
+    prompt = "The brave warrior"
+    result = milestone_5(prompt=prompt, max_new_tokens=15, seed=42)
+    assert isinstance(result, str)
+    assert result.startswith(prompt)
+    assert len(result) > len(prompt)
+
+
+def test_generate_determinism_and_greedy():
+    """Verifies that identical seeds and greedy decoding are fully deterministic, and top_k=1 equals greedy."""
+    import torch
+    from app.model import GPT, GPTConfig
+    from app.tokenizer import BPETokenizer
+    from app.generate import generate
+
+    tok = BPETokenizer()
+    tok.train("The fearless hero entered the dark cavern to face the red dragon.", vocab_size=300)
+
+    config = GPTConfig(vocab_size=tok.vocab_size, block_size=32, n_layer=2, n_head=2, n_embd=32, dropout=0.0)
+    model = GPT(config)
+    model.eval()
+
+    prompt = "The fearless"
+
+    # 1. Same seed must produce identical outputs
+    out_seed_a = generate(model, tok, prompt=prompt, max_new_tokens=10, temperature=1.0, seed=999)
+    out_seed_b = generate(model, tok, prompt=prompt, max_new_tokens=10, temperature=1.0, seed=999)
+    assert out_seed_a == out_seed_b, "Outputs with identical seeds did not match"
+
+    # 2. Greedy decoding (temperature=0) must be deterministic
+    greedy_1 = generate(model, tok, prompt=prompt, max_new_tokens=10, temperature=0.0)
+    greedy_2 = generate(model, tok, prompt=prompt, max_new_tokens=10, temperature=0.0)
+    assert greedy_1 == greedy_2, "Greedy outputs were not deterministic"
+
+    # 3. top_k=1 must match greedy decoding
+    top_k_1 = generate(model, tok, prompt=prompt, max_new_tokens=10, temperature=1.0, top_k=1)
+    assert top_k_1 == greedy_1, "top_k=1 did not match greedy decoding"
+
+
+def test_generate_output_length_and_empty_prompt():
+    """Verifies token continuation count and graceful handling of empty prompt."""
+    from app.model import GPT, GPTConfig
+    from app.tokenizer import BPETokenizer
+    from app.generate import generate
+
+    tok = BPETokenizer()
+    tok.train("Ancient magic whispered through the crumbling stone halls.", vocab_size=300)
+
+    config = GPTConfig(vocab_size=tok.vocab_size, block_size=32, n_layer=2, n_head=2, n_embd=32, dropout=0.0)
+    model = GPT(config)
+
+    # Output length check
+    prompt = "Ancient magic"
+    prompt_tokens = tok.encode(prompt)
+    continuation = generate(model, tok, prompt=prompt, max_new_tokens=12, temperature=0.0)
+    total_tokens = tok.encode(continuation)
+    assert len(total_tokens) == len(prompt_tokens) + 12
+
+    # Empty prompt check
+    empty_result = generate(model, tok, prompt="", max_new_tokens=8, temperature=0.0)
+    assert isinstance(empty_result, str)
+    assert len(empty_result) > 0
+
+
+def test_generate_invalid_arguments_raise_errors():
+    """Verifies input validation on temperature, top_k, top_p, and max_new_tokens."""
+    import pytest
+    from app.model import GPT, GPTConfig
+    from app.tokenizer import BPETokenizer
+    from app.generate import generate
+
+    tok = BPETokenizer()
+    tok.train("A sample story for testing validation.", vocab_size=280)
+    config = GPTConfig(vocab_size=tok.vocab_size, block_size=16)
+    model = GPT(config)
+
+    with pytest.raises(ValueError, match="temperature"):
+        generate(model, tok, prompt="test", temperature=-0.5)
+
+    with pytest.raises(ValueError, match="top_k"):
+        generate(model, tok, prompt="test", top_k=0)
+
+    with pytest.raises(ValueError, match="top_p"):
+        generate(model, tok, prompt="test", top_p=0.0)
+
+    with pytest.raises(ValueError, match="top_p"):
+        generate(model, tok, prompt="test", top_p=1.5)
+
+    with pytest.raises(ValueError, match="max_new_tokens"):
+        generate(model, tok, prompt="test", max_new_tokens=-1)
 
 
 # Milestone 6: Design a CLI where users can input a story prompt and receive generated segments.

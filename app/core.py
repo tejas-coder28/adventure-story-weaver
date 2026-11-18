@@ -22,6 +22,7 @@ from app.model import (
     GPT,
 )
 from app.train import train, get_batch, estimate_loss, load_dataset
+from app.generate import generate, load_checkpoint, validate_generation_params
 
 
 # --- Milestone 1: Assemble a small corpus of text from public domain adventure stories or fantasy novels.
@@ -134,8 +135,34 @@ def milestone_4(
 
 # --- Milestone 5: Implement a text generation feature that creates coherent story continuations.
 # Hint: Text generation with sampling strategies.
-def milestone_5():  # TODO(milestone 5)
-    raise NotImplementedError("TODO(milestone 5)")
+def milestone_5(
+    prompt: str = "The adventurer stepped into the dark cavern,",
+    max_new_tokens: int = 50,
+    temperature: float = 0.8,
+    top_k: int | None = 50,
+    top_p: float | None = 0.9,
+    seed: int | None = 42,
+    checkpoint_path: str = "checkpoints/model.pt",
+) -> str:
+    """Milestone 5: Generate a story continuation using trained GPT checkpoint."""
+    ckpt_file = Path(checkpoint_path)
+    if ckpt_file.exists():
+        model, tokenizer = load_checkpoint(ckpt_file)
+    else:
+        tokenizer, _ = milestone_2()
+        config = GPTConfig(vocab_size=tokenizer.vocab_size)
+        model = GPT(config)
+
+    return generate(
+        model=model,
+        tokenizer=tokenizer,
+        prompt=prompt,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_k=top_k,
+        top_p=top_p,
+        seed=seed,
+    )
 
 
 # --- Milestone 6: Design a CLI where users can input a story prompt and receive generated segments.

@@ -22,7 +22,7 @@ Tick these off as you go, and commit after each one.
       Hint: Causal self-attention and transformer block construction.
 - [x] **4. Set up the training loop and train the GPT model on the narrative data.**  
       Hint: Training loop and gradient descent.
-- [ ] **5. Implement a text generation feature that creates coherent story continuations.**  
+- [x] **5. Implement a text generation feature that creates coherent story continuations.**  
       Hint: Text generation with sampling strategies.
 - [ ] **6. Design a CLI where users can input a story prompt and receive generated segments.**  
       Hint: Building an interface for text generation.
