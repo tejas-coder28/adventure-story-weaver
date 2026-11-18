@@ -14,7 +14,7 @@ Ever wanted to dynamically generate engaging story segments for your text advent
 
 Tick these off as you go, and commit after each one.
 
-- [ ] **1. Assemble a small corpus of text from public domain adventure stories or fantasy novels.**  
+- [x] **1. Assemble a small corpus of text from public domain adventure stories or fantasy novels.**  
       Hint: Curating your raw text corpus.
 - [ ] **2. Implement the byte-pair tokenizer and generate embeddings from the story text.**  
       Hint: Byte-pair tokenization and embedding layers.
