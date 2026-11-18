@@ -167,5 +167,25 @@ def milestone_5(
 
 # --- Milestone 6: Design a CLI where users can input a story prompt and receive generated segments.
 # Hint: Building an interface for text generation.
-def milestone_6():  # TODO(milestone 6)
-    raise NotImplementedError("TODO(milestone 6)")
+def milestone_6(
+    prompt: str = "You stand at the mouth of a dark cave",
+    max_tokens: int = 50,
+    temperature: float = 0.8,
+    checkpoint: str = "checkpoints/model.pt",
+) -> str:
+    """Milestone 6: CLI story continuation interface."""
+    ckpt_path = Path(checkpoint)
+    if ckpt_path.exists():
+        model, tokenizer = load_checkpoint(ckpt_path)
+    else:
+        tokenizer, _ = milestone_2()
+        config = GPTConfig(vocab_size=tokenizer.vocab_size)
+        model = GPT(config)
+
+    return generate(
+        model=model,
+        tokenizer=tokenizer,
+        prompt=prompt,
+        max_new_tokens=max_tokens,
+        temperature=temperature,
+    )

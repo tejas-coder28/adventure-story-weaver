@@ -425,7 +425,57 @@ def test_generate_invalid_arguments_raise_errors():
 
 
 # Milestone 6: Design a CLI where users can input a story prompt and receive generated segments.
-@pytest.mark.skip(reason="remove this line when you start milestone 6")
 def test_milestone_6():
-    raise NotImplementedError("write the test for milestone 6")
+    from app.core import milestone_6
+
+    prompt = "You stand at the mouth of a dark cave"
+    result = milestone_6(prompt=prompt, max_tokens=15, temperature=0.7)
+    assert isinstance(result, str)
+    assert result.startswith(prompt)
+    assert len(result) > len(prompt)
+
+
+def test_cli_execution_and_generation(capsys, tmp_path):
+    """Verifies that the CLI executes hello and generates continuations with positional prompt."""
+    from pathlib import Path
+    import pytest
+    from app.cli import main
+
+    # 1. Hello command
+    main(["hello"])
+    assert "is ready" in capsys.readouterr().out
+
+    # 2. Positional prompt generation (works both locally and in fresh CI environments)
+    ckpt_path = Path("checkpoints/model.pt")
+    if not ckpt_path.exists():
+        from app.core import milestone_4
+        ckpt_path = tmp_path / "ci_model.pt"
+        milestone_4(checkpoint_path=str(ckpt_path), max_steps=2, batch_size=2)
+
+    prompt = "The ranger spotted tracks in the mud."
+    main([prompt, "--checkpoint", str(ckpt_path), "--max-tokens", "10", "--temperature", "0.0"])
+    out = capsys.readouterr().out
+    assert prompt in out
+
+
+def test_cli_error_handling(capsys):
+    """Verifies friendly errors for missing checkpoints and invalid parameters."""
+    import pytest
+    from app.cli import main
+
+    # 1. Missing checkpoint prints training command without traceback
+    with pytest.raises(SystemExit) as exc1:
+        main(["A test prompt", "--checkpoint", "non_existent_model.pt"])
+    assert exc1.value.code != 0
+    err1 = capsys.readouterr().err
+    assert "Model checkpoint not found" in err1
+    assert "python -m app.cli train" in err1
+
+    # 2. Invalid temperature parameter prints friendly error
+    with pytest.raises(SystemExit) as exc2:
+        main(["A test prompt", "--temperature", "-0.8"])
+    assert exc2.value.code != 0
+    err2 = capsys.readouterr().err
+    assert "Invalid argument" in err2
+    assert "temperature must be >= 0" in err2
 
