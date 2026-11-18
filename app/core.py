@@ -8,6 +8,16 @@ from scripts.build_corpus import (
 )
 
 
+from app.tokenizer import BPETokenizer, Tokenizer
+from app.model import (
+    GPTEmbedding,
+    GPTEmbeddings,
+    TransformerEmbedding,
+    EmbeddingLayer,
+    StoryEmbedding,
+)
+
+
 # --- Milestone 1: Assemble a small corpus of text from public domain adventure stories or fantasy novels.
 # Hint: Curating your raw text corpus.
 def milestone_1(corpus_path: str = "data/corpus.txt") -> str:
@@ -25,8 +35,44 @@ def milestone_1(corpus_path: str = "data/corpus.txt") -> str:
 
 # --- Milestone 2: Implement the byte-pair tokenizer and generate embeddings from the story text.
 # Hint: Byte-pair tokenization and embedding layers.
-def milestone_2():  # TODO(milestone 2)
-    raise NotImplementedError("TODO(milestone 2)")
+def milestone_2(
+    corpus_path: str = "data/corpus.txt",
+    vocab_size: int = 1000,
+    n_embd: int = 64,
+    block_size: int = 128,
+) -> tuple[BPETokenizer, GPTEmbedding]:
+    """Milestone 2: Train a byte-pair tokenizer and generate embeddings from the story text.
+
+    Returns:
+        tuple of (tokenizer, embedding_module)
+    """
+    tok_path = Path("artifacts/tokenizer.json")
+    if tok_path.exists():
+        tokenizer = BPETokenizer.load(tok_path)
+    else:
+        path = Path(corpus_path)
+        tokenizer = BPETokenizer()
+        if path.exists():
+            text = path.read_text(encoding="utf-8")
+            tokenizer.train(
+                text,
+                vocab_size=vocab_size,
+                max_chars=20_000,
+                special_tokens=["<|endoftext|>"],
+            )
+        else:
+            tokenizer.train(
+                "An adventurous journey across enchanted lands and perilous dungeons.",
+                vocab_size=min(vocab_size, 300),
+                special_tokens=["<|endoftext|>"],
+            )
+
+    embedding = GPTEmbedding(
+        vocab_size=tokenizer.vocab_size,
+        n_embd=n_embd,
+        block_size=block_size,
+    )
+    return tokenizer, embedding
 
 
 # --- Milestone 3: Build the causal self-attention mechanism and assemble the transformer block.
