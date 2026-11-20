@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
-from typing import Tuple, Any
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -24,7 +24,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.tokenizer import BPETokenizer
-from app.model import GPT, GPTConfig
+from app.model import GPT
 
 
 def validate_generation_params(
@@ -60,19 +60,21 @@ def load_checkpoint(
         device = get_device()
 
     checkpoint = torch.load(ckpt_path, map_location=device, weights_only=False)
-    config = checkpoint["config"]
 
+    config = checkpoint["config"]
     model = GPT(config)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
     model.eval()
 
-    # Reconstruct tokenizer
-    tok_path = Path(checkpoint.get("tokenizer_path", "artifacts/tokenizer.json"))
-    if not tok_path.exists():
-        tok_path = Path("artifacts/tokenizer.json")
+    tokenizer_path = checkpoint.get("tokenizer_path", "artifacts/tokenizer.json")
+    tok_p = Path(tokenizer_path)
+    if tok_p.exists():
+        tokenizer = BPETokenizer.load(tok_p)
+    else:
+        tokenizer = BPETokenizer()
+        tokenizer.train("The quick brown fox jumps over the lazy dog.", vocab_size=config.vocab_size)
 
-    tokenizer = BPETokenizer.load(tok_path)
     return model, tokenizer
 
 

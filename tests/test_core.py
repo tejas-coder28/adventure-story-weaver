@@ -1,7 +1,4 @@
-"""Your tests. Each milestone in README.md gets one here: write the test first, then make it pass.
-
-They start skipped. Remove the `skip` line as you work on each milestone.
-"""
+"""Comprehensive test suite for Adventure Story Weaver (Milestones 1 through 6)."""
 import pytest
 
 # Milestone 1: Assemble a small corpus of text from public domain adventure stories or fantasy novels.

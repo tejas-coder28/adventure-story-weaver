@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
-from typing import Dict, List, Set, Tuple, Any
 from collections import Counter, defaultdict
 
 
@@ -24,37 +23,45 @@ class BPETokenizer:
     def __init__(self) -> None:
         # Base vocabulary of 256 single bytes
         self.vocab: dict[int, bytes] = {i: bytes([i]) for i in range(256)}
-        # Mapping from (token_id_1, token_id_2) -> merged_token_id
+        # Merges stored in chronological order: (p0, p1) -> new_id
         self.merges: dict[tuple[int, int], int] = {}
-        # Special tokens: string -> token_id
+        # Special tokens: token_str -> token_id
         self.special_tokens: dict[str, int] = {}
         self.inverse_special_tokens: dict[int, str] = {}
 
     @property
     def vocab_size(self) -> int:
-        """Total vocabulary size including bytes, merges, and special tokens."""
+        """Returns the total vocabulary size including base bytes, merges, and special tokens."""
         return len(self.vocab) + len(self.special_tokens)
+
+    def register_special_tokens(self, tokens: list[str]) -> None:
+        """Registers custom special tokens (e.g. '<|endoftext|>') with IDs beyond the merges."""
+        for token_str in tokens:
+            if token_str not in self.special_tokens:
+                new_id = self.vocab_size
+                self.special_tokens[token_str] = new_id
+                self.inverse_special_tokens[new_id] = token_str
 
     def train(
         self,
         text: str,
         vocab_size: int = 1000,
-        max_chars: int | None = 200_000,
+        max_chars: int = 250_000,
         special_tokens: list[str] | None = None,
     ) -> None:
-        """Trains the BPE tokenizer on raw text until reaching vocab_size.
+        """Trains the BPE tokenizer on input text up to the specified vocab_size.
 
         Args:
-            text: Raw training corpus text.
-            vocab_size: Target vocabulary size (>= 256).
-            max_chars: Optional limit on characters sampled for training speed.
+            text: Raw training corpus string.
+            vocab_size: Total vocabulary size to reach (>= 256).
+            max_chars: Maximum characters sampled for fast training.
             special_tokens: List of special token strings to register (e.g. ['<|endoftext|>']).
         """
         if vocab_size < 256:
             raise ValueError(f"vocab_size must be at least 256, got {vocab_size}")
 
-        if max_chars is not None and len(text) > max_chars:
-            text = text[:max_chars]
+        num_special = len(special_tokens) if special_tokens else 0
+        target_merges = max(0, vocab_size - 256 - num_special)
 
         # Reset vocabulary and merges
         self.vocab = {i: bytes([i]) for i in range(256)}
@@ -62,9 +69,14 @@ class BPETokenizer:
         self.special_tokens = {}
         self.inverse_special_tokens = {}
 
-        # Pre-tokenize text into word chunks (leading space + non-space or pure space)
-        # This keeps words intact and prevents cross-word runaway merges
-        words = re.findall(r"\s*\S+|\s+", text)
+        if target_merges == 0:
+            if special_tokens:
+                self.register_special_tokens(special_tokens)
+            return
+
+        # Sample text if corpus is large to keep training fast
+        sample_text = text[:max_chars] if len(text) > max_chars else text
+        words = re.findall(r"\S+|\s+", sample_text)
         word_counts = Counter(words)
 
         # Convert words to tuples of byte integers
@@ -77,104 +89,109 @@ class BPETokenizer:
         pair_to_words: dict[tuple[int, int], set[tuple[int, ...]]] = defaultdict(set)
 
         for word, count in vocab_words.items():
-            for pair in zip(word, word[1:]):
+            for i in range(len(word) - 1):
+                pair = (word[i], word[i + 1])
                 pair_counts[pair] += count
                 pair_to_words[pair].add(word)
 
-        # Merge iteratively until target vocab_size is reached
-        num_merges = vocab_size - 256
-        current_id = 256
-
-        while len(self.merges) < num_merges and pair_counts:
-            # Find the most frequent adjacent pair
-            best_pair = max(pair_counts, key=pair_counts.get)  # type: ignore[arg-type]
-            if pair_counts[best_pair] < 2:
-                # No more frequent pairs to merge
+        # Iteratively merge most frequent adjacent pairs
+        next_id = 256
+        for _ in range(target_merges):
+            if not pair_counts:
                 break
 
-            # Register new token and merge rule
-            self.merges[best_pair] = current_id
-            self.vocab[current_id] = self.vocab[best_pair[0]] + self.vocab[best_pair[1]]
-            del pair_counts[best_pair]
+            # Find the most frequent pair
+            best_pair = max(pair_counts.items(), key=lambda kv: (kv[1], -kv[0][0], -kv[0][1]))[0]
+            if pair_counts[best_pair] <= 0:
+                break
+
+            # Register merge
+            self.merges[best_pair] = next_id
+            self.vocab[next_id] = self.vocab[best_pair[0]] + self.vocab[best_pair[1]]
+            next_id += 1
 
             # Update words containing best_pair
             words_to_update = list(pair_to_words.pop(best_pair, set()))
-            p0, p1 = best_pair
+            del pair_counts[best_pair]
 
-            for old_word in words_to_update:
-                if old_word not in vocab_words:
-                    continue
-                freq = vocab_words.pop(old_word)
+            for word in words_to_update:
+                count = vocab_words.pop(word)
 
-                # Remove pair counts from old_word
-                for pair in zip(old_word, old_word[1:]):
-                    if pair in pair_counts:
-                        pair_counts[pair] -= freq
-                        if pair_counts[pair] <= 0:
+                # Decrement old pair counts in this word
+                for i in range(len(word) - 1):
+                    pair = (word[i], word[i + 1])
+                    if pair != best_pair:
+                        pair_counts[pair] -= count
+                        if pair_counts[pair] <= 0 and pair in pair_counts:
                             del pair_counts[pair]
-                    if pair in pair_to_words:
-                        pair_to_words[pair].discard(old_word)
+                        if word in pair_to_words[pair]:
+                            pair_to_words[pair].remove(word)
 
-                # Merge occurrences of best_pair in old_word
+                # Merge occurrences of best_pair in the word
                 new_word: list[int] = []
-                j = 0
-                nw = len(old_word)
-                while j < nw:
-                    if j < nw - 1 and old_word[j] == p0 and old_word[j + 1] == p1:
-                        new_word.append(current_id)
-                        j += 2
+                i = 0
+                w_len = len(word)
+                while i < w_len:
+                    if i < w_len - 1 and (word[i], word[i + 1]) == best_pair:
+                        new_word.append(self.merges[best_pair])
+                        i += 2
                     else:
-                        new_word.append(old_word[j])
-                        j += 1
-                merged_word = tuple(new_word)
-                vocab_words[merged_word] = freq
+                        new_word.append(word[i])
+                        i += 1
 
-                # Add pair counts from new_word
-                for pair in zip(merged_word, merged_word[1:]):
-                    pair_counts[pair] += freq
+                merged_word = tuple(new_word)
+                vocab_words[merged_word] = vocab_words.get(merged_word, 0) + count
+
+                # Increment new pair counts
+                for j in range(len(merged_word) - 1):
+                    pair = (merged_word[j], merged_word[j + 1])
+                    pair_counts[pair] += count
                     pair_to_words[pair].add(merged_word)
 
-            current_id += 1
-
-        # Register special tokens if provided
         if special_tokens:
-            for st in special_tokens:
-                self.add_special_token(st)
+            self.register_special_tokens(special_tokens)
 
-    def add_special_token(self, token: str) -> int:
-        """Registers a special token string and assigns it the next available ID."""
-        if token in self.special_tokens:
-            return self.special_tokens[token]
-        token_id = self.vocab_size
-        self.special_tokens[token] = token_id
-        self.inverse_special_tokens[token_id] = token
-        return token_id
+    def _get_stats(self, ids: list[int]) -> Counter[tuple[int, int]]:
+        """Counts frequencies of adjacent pairs in an ID list."""
+        return Counter(zip(ids, ids[1:]))
+
+    def _merge_pair(self, ids: list[int], pair: tuple[int, int], new_id: int) -> list[int]:
+        """Replaces all occurrences of pair with new_id in ids."""
+        res: list[int] = []
+        i = 0
+        n = len(ids)
+        while i < n:
+            if i < n - 1 and ids[i] == pair[0] and ids[i + 1] == pair[1]:
+                res.append(new_id)
+                i += 2
+            else:
+                res.append(ids[i])
+                i += 1
+        return res
 
     def _encode_bytes(self, byte_seq: bytes) -> list[int]:
-        """Encodes a single sequence of bytes using learned merges."""
+        """Encodes raw bytes by applying merges in priority order."""
         tokens = list(byte_seq)
-        while len(tokens) >= 2:
-            # Find the pair present in merges with the lowest rank (earliest merge)
-            min_rank = float("inf")
-            best_pair = None
-            for pair in zip(tokens, tokens[1:]):
-                rank = self.merges.get(pair)
-                if rank is not None and rank < min_rank:
-                    min_rank = rank
-                    best_pair = pair
+        if len(tokens) < 2:
+            return tokens
 
-            if best_pair is None:
+        while len(tokens) >= 2:
+            # Find candidate pairs present in our merges
+            pairs = zip(tokens, tokens[1:])
+            # Pick the merge with the smallest index (earliest learned = highest priority)
+            mergeable = [(self.merges[p], p) for p in pairs if p in self.merges]
+            if not mergeable:
                 break
 
-            # Replace occurrences of best_pair with its merged token ID
+            _, best_pair = min(mergeable, key=lambda x: x[0])
+            new_id = self.merges[best_pair]
+
             new_tokens: list[int] = []
             i = 0
             n = len(tokens)
-            p0, p1 = best_pair
-            merged_id = self.merges[best_pair]
             while i < n:
-                if i < n - 1 and tokens[i] == p0 and tokens[i + 1] == p1:
-                    new_tokens.append(merged_id)
+                if i < n - 1 and tokens[i] == best_pair[0] and tokens[i + 1] == best_pair[1]:
+                    new_tokens.append(new_id)
                     i += 2
                 else:
                     new_tokens.append(tokens[i])
@@ -186,7 +203,8 @@ class BPETokenizer:
     def encode(self, text: str, allowed_special: set[str] | None = None) -> list[int]:
         """Encodes a string into a list of token IDs.
 
-        Guarantees round-trip fidelity when decoded.
+        Guarantees lossless round-trip for any Unicode string.
+        Handles special tokens when allowed.
         """
         if not text:
             return []
@@ -194,30 +212,29 @@ class BPETokenizer:
         if allowed_special is None:
             allowed_special = set(self.special_tokens.keys())
 
-        # If special tokens are present and allowed, split text by special tokens
-        if allowed_special:
-            escaped_tokens = [re.escape(t) for t in allowed_special if t in self.special_tokens]
-            if escaped_tokens:
-                pattern = f"({'|'.join(escaped_tokens)})"
-                parts = re.split(pattern, text)
-                tokens: list[int] = []
-                for part in parts:
-                    if not part:
-                        continue
-                    if part in self.special_tokens:
-                        tokens.append(self.special_tokens[part])
-                    else:
-                        tokens.extend(self._encode_text_segment(part))
-                return tokens
+        if not self.special_tokens or not any(s in text for s in allowed_special):
+            return self._encode_text_segment(text)
 
-        return self._encode_text_segment(text)
+        # Build regex to split on allowed special tokens
+        pattern = "(" + "|".join(re.escape(s) for s in allowed_special if s in self.special_tokens) + ")"
+        parts = re.split(pattern, text)
+        tokens: list[int] = []
+        for part in parts:
+            if not part:
+                continue
+            if part in self.special_tokens and part in allowed_special:
+                tokens.append(self.special_tokens[part])
+            else:
+                tokens.extend(self._encode_text_segment(part))
+        return tokens
 
     def _encode_text_segment(self, text: str) -> list[int]:
-        """Encodes text by splitting into word chunks and merging each chunk."""
-        chunks = re.findall(r"\s*\S+|\s+", text)
+        """Encodes a regular text segment by splitting on words/spaces."""
+        words = re.findall(r"\S+|\s+", text)
         tokens: list[int] = []
-        for chunk in chunks:
-            tokens.extend(self._encode_bytes(chunk.encode("utf-8")))
+        for word in words:
+            raw_bytes = word.encode("utf-8")
+            tokens.extend(self._encode_bytes(raw_bytes))
         return tokens
 
     def decode(self, ids: list[int]) -> str:
@@ -231,65 +248,63 @@ class BPETokenizer:
         parts: list[str] = []
         byte_buffer: list[bytes] = []
 
-        for idx in ids:
-            if idx in self.inverse_special_tokens:
-                if byte_buffer:
-                    parts.append(b"".join(byte_buffer).decode("utf-8", errors="replace"))
-                    byte_buffer = []
-                parts.append(self.inverse_special_tokens[idx])
-            elif idx in self.vocab:
-                byte_buffer.append(self.vocab[idx])
+        def flush_buffer():
+            if byte_buffer:
+                all_bytes = b"".join(byte_buffer)
+                parts.append(all_bytes.decode("utf-8", errors="replace"))
+                byte_buffer.clear()
+
+        for token_id in ids:
+            if token_id in self.inverse_special_tokens:
+                flush_buffer()
+                parts.append(self.inverse_special_tokens[token_id])
+            elif token_id in self.vocab:
+                byte_buffer.append(self.vocab[token_id])
             else:
-                # Unknown token fallback
-                if byte_buffer:
-                    parts.append(b"".join(byte_buffer).decode("utf-8", errors="replace"))
-                    byte_buffer = []
-                parts.append(f"<unk_{idx}>")
+                flush_buffer()
+                parts.append("")
 
-        if byte_buffer:
-            parts.append(b"".join(byte_buffer).decode("utf-8", errors="replace"))
-
+        flush_buffer()
         return "".join(parts)
 
     def save(self, path: str | Path) -> None:
-        """Saves the tokenizer vocabulary, merges, and special tokens to a JSON file."""
-        file_path = Path(path)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
+        """Saves vocabulary, merges, and special tokens to JSON."""
+        save_path = Path(path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
 
         data = {
-            "vocab_size": self.vocab_size,
             "merges": [list(pair) for pair in self.merges.keys()],
             "special_tokens": self.special_tokens,
         }
-        file_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        with open(save_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
 
     @classmethod
     def load(cls, path: str | Path) -> BPETokenizer:
-        """Loads a tokenizer from a saved JSON file."""
-        file_path = Path(path)
-        if not file_path.exists():
-            raise FileNotFoundError(f"Tokenizer file not found at: {file_path}")
+        """Loads vocabulary, merges, and special tokens from JSON."""
+        load_path = Path(path)
+        if not load_path.exists():
+            raise FileNotFoundError(f"Tokenizer file not found: {load_path}")
 
-        data = json.loads(file_path.read_text(encoding="utf-8"))
+        with open(load_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
         tokenizer = cls()
-
-        # Reconstruct base vocabulary and merges
         tokenizer.vocab = {i: bytes([i]) for i in range(256)}
         tokenizer.merges = {}
 
-        for idx, pair in enumerate(data.get("merges", []), start=256):
+        next_id = 256
+        for pair in data.get("merges", []):
             pair_tuple = (int(pair[0]), int(pair[1]))
-            tokenizer.merges[pair_tuple] = idx
-            tokenizer.vocab[idx] = (
+            tokenizer.merges[pair_tuple] = next_id
+            tokenizer.vocab[next_id] = (
                 tokenizer.vocab[pair_tuple[0]] + tokenizer.vocab[pair_tuple[1]]
             )
+            next_id += 1
 
-        tokenizer.special_tokens = {
-            k: int(v) for k, v in data.get("special_tokens", {}).items()
-        }
-        tokenizer.inverse_special_tokens = {
-            v: k for k, v in tokenizer.special_tokens.items()
-        }
+        for token_str, token_id in data.get("special_tokens", {}).items():
+            tokenizer.special_tokens[token_str] = int(token_id)
+            tokenizer.inverse_special_tokens[int(token_id)] = token_str
 
         return tokenizer
 

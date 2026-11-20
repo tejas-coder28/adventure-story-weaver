@@ -1,13 +1,12 @@
-"""Your code. One stub per milestone; build them in order and keep each one small."""
+"""Integration functions and milestone modules for Adventure Story Weaver."""
 from pathlib import Path
+
 from scripts.build_corpus import (
     strip_gutenberg_header_footer,
     normalize_text,
     clean_gutenberg_text,
     build_corpus,
 )
-
-
 from app.tokenizer import BPETokenizer, Tokenizer
 from app.model import (
     GPTConfig,
@@ -25,8 +24,6 @@ from app.train import train, get_batch, estimate_loss, load_dataset
 from app.generate import generate, generate_ids, load_checkpoint, validate_generation_params
 
 
-# --- Milestone 1: Assemble a small corpus of text from public domain adventure stories or fantasy novels.
-# Hint: Curating your raw text corpus.
 def milestone_1(corpus_path: str = "data/corpus.txt") -> str:
     """Milestone 1: Read and return the curated adventure stories corpus.
 
@@ -40,8 +37,6 @@ def milestone_1(corpus_path: str = "data/corpus.txt") -> str:
     return path.read_text(encoding="utf-8")
 
 
-# --- Milestone 2: Implement the byte-pair tokenizer and generate embeddings from the story text.
-# Hint: Byte-pair tokenization and embedding layers.
 def milestone_2(
     corpus_path: str = "data/corpus.txt",
     vocab_size: int = 1000,
@@ -82,8 +77,6 @@ def milestone_2(
     return tokenizer, embedding
 
 
-# --- Milestone 3: Build the causal self-attention mechanism and assemble the transformer block.
-# Hint: Causal self-attention and transformer block construction.
 def milestone_3(config: GPTConfig | None = None) -> GPT:
     """Milestone 3: Build and return the initialized GPT model with causal self-attention.
 
@@ -102,8 +95,6 @@ def milestone_3(config: GPTConfig | None = None) -> GPT:
     return GPT(config)
 
 
-# --- Milestone 4: Set up the training loop and train the GPT model on the narrative data.
-# Hint: Training loop and gradient descent.
 def milestone_4(
     corpus_path: str = "data/corpus.txt",
     tokenizer_path: str = "artifacts/tokenizer.json",
@@ -133,8 +124,6 @@ def milestone_4(
     )
 
 
-# --- Milestone 5: Implement a text generation feature that creates coherent story continuations.
-# Hint: Text generation with sampling strategies.
 def milestone_5(
     prompt: str = "The adventurer stepped into the dark cavern,",
     max_new_tokens: int = 50,
@@ -165,8 +154,6 @@ def milestone_5(
     )
 
 
-# --- Milestone 6: Design a CLI where users can input a story prompt and receive generated segments.
-# Hint: Building an interface for text generation.
 def milestone_6(
     prompt: str = "You stand at the mouth of a dark cave",
     max_tokens: int = 50,

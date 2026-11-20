@@ -18,11 +18,10 @@ import math
 import os
 from pathlib import Path
 import sys
-from typing import Tuple, Dict, Any
+from typing import Any
 
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset
 
 # Ensure repo root is importable
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -34,7 +33,7 @@ from app.model import GPT, GPTConfig
 
 
 def get_device() -> torch.device:
-    """Automatically selects the best available compute device."""
+    """Selects available compute accelerator (CUDA, Apple MPS, or CPU)."""
     if torch.cuda.is_available():
         return torch.device("cuda")
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
@@ -146,8 +145,9 @@ def train(
     max_steps: int = 200,
     batch_size: int = 16,
     learning_rate: float = 1e-3,
-    min_lr: float = 1e-4,
+    min_learning_rate: float = 1e-4,
     warmup_steps: int = 20,
+    weight_decay: float = 0.01,
     eval_interval: int = 50,
     eval_iters: int = 10,
     block_size: int = 128,
@@ -155,29 +155,27 @@ def train(
     n_head: int = 4,
     n_embd: int = 128,
     dropout: float = 0.1,
-    weight_decay: float = 0.1,
-    grad_clip: float = 1.0,
     seed: int = 1337,
     device: torch.device | None = None,
 ) -> dict[str, Any]:
-    """Runs the GPT training loop and saves the best model checkpoint."""
+    """Executes the training loop and saves the best model checkpoint."""
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
     if device is None:
         device = get_device()
-
     print(f"Using device: {device}")
 
-    # Load data and tokenizer
+    # Load and encode data
     train_data, val_data, tokenizer = load_dataset(
         corpus_path=corpus_path,
         tokenizer_path=tokenizer_path,
+        train_split_ratio=0.9,
     )
     print(f"Dataset loaded: {len(train_data):,} train tokens, {len(val_data):,} val tokens")
 
-    # Configure model
+    # Instantiate model
     config = GPTConfig(
         vocab_size=tokenizer.vocab_size,
         block_size=block_size,
@@ -187,38 +185,31 @@ def train(
         dropout=dropout,
     )
     model = GPT(config).to(device)
-    print(f"Initialized GPT model ({model.get_num_params():,} total parameters)")
+    print(f"Model instantiated with {model.get_num_params():,} parameters.")
 
-    # Optimizer (AdamW with weight decay)
+    # Optimizer
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=learning_rate,
-        betas=(0.9, 0.95),
         weight_decay=weight_decay,
+        betas=(0.9, 0.99),
     )
 
-    checkpoint_file = Path(checkpoint_path)
-    checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir = Path(checkpoint_path).parent
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     best_val_loss = float("inf")
-    history: list[dict[str, Any]] = []
+    history: list[dict[str, float]] = []
 
-    print("\nStarting training loop...")
-    print(f"Max steps: {max_steps} | Batch size: {batch_size} | Block size: {block_size}")
+    print(f"Starting training run: {max_steps} steps, batch_size={batch_size}, lr={learning_rate}...")
 
     for step in range(max_steps):
-        # Update learning rate according to warmup + cosine decay schedule
-        lr = get_lr(
-            step=step,
-            warmup_steps=warmup_steps,
-            max_steps=max_steps,
-            max_lr=learning_rate,
-            min_lr=min_lr,
-        )
+        # Determine learning rate for this step
+        lr = get_lr(step, warmup_steps, max_steps, learning_rate, min_learning_rate)
         for param_group in optimizer.param_groups:
             param_group["lr"] = lr
 
-        # Periodic evaluation
+        # Evaluate periodically
         if step % eval_interval == 0 or step == max_steps - 1:
             losses = estimate_loss(
                 model=model,
@@ -230,10 +221,8 @@ def train(
                 device=device,
             )
             print(
-                f"Step {step:4d}/{max_steps} | "
-                f"Train Loss: {losses['train']:.4f} | "
-                f"Val Loss: {losses['val']:.4f} | "
-                f"LR: {lr:.6f}"
+                f"step {step:4d}/{max_steps} | lr {lr:.6f} | "
+                f"train loss {losses['train']:.4f} | val loss {losses['val']:.4f}"
             )
             history.append({
                 "step": step,
@@ -242,60 +231,52 @@ def train(
                 "lr": lr,
             })
 
-            # Save best checkpoint
+            # Checkpoint saving for best validation loss
             if losses["val"] < best_val_loss:
                 best_val_loss = losses["val"]
-                checkpoint = {
+                ckpt_data = {
+                    "step": step,
                     "model_state_dict": model.state_dict(),
                     "config": config,
                     "tokenizer_path": str(tokenizer_path),
-                    "step": step,
                     "val_loss": best_val_loss,
-                    "train_loss": losses["train"],
+                    "optimizer_state_dict": optimizer.state_dict(),
                 }
-                torch.save(checkpoint, checkpoint_file)
+                torch.save(ckpt_data, checkpoint_path)
+                print(f"Saved new best checkpoint to '{checkpoint_path}' (val_loss: {best_val_loss:.4f})")
 
-        # Sample a batch of data
+        # Forward pass on training batch
+        model.train()
         x, y = get_batch("train", train_data, val_data, batch_size, block_size, device)
+        logits, loss = model(x, y)
 
-        # Forward pass and loss computation
-        _, loss = model(x, y)
-
-        # Backward pass
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
 
-        # Gradient clipping to stabilize training
-        if grad_clip > 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
-
-        # Optimizer step
+        # Gradient clipping to prevent exploding gradients
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
-    print(f"\nTraining complete! Best validation loss: {best_val_loss:.4f}")
-    print(f"Best checkpoint saved to: {checkpoint_file}")
-
+    print(f"Training completed. Best validation loss: {best_val_loss:.4f}")
     return {
         "model": model,
         "config": config,
-        "best_val_loss": best_val_loss,
         "history": history,
-        "checkpoint_path": checkpoint_file,
+        "checkpoint_path": checkpoint_path,
+        "best_val_loss": best_val_loss,
     }
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Train GPT model on adventure stories.")
+    parser = argparse.ArgumentParser(description="Train GPT model on story corpus.")
     parser.add_argument("--corpus", default="data/corpus.txt", help="Path to text corpus")
     parser.add_argument("--tokenizer", default="artifacts/tokenizer.json", help="Path to tokenizer JSON")
-    parser.add_argument("--checkpoint", default="checkpoints/model.pt", help="Path to save checkpoint")
+    parser.add_argument("--checkpoint", default="checkpoints/model.pt", help="Path to output checkpoint")
     parser.add_argument("--max_steps", type=int, default=200, help="Total training steps")
-    parser.add_argument("--batch_size", type=int, default=16, help="Batch size")
-    parser.add_argument("--lr", type=float, default=1e-3, help="Maximum learning rate")
+    parser.add_argument("--batch_size", type=int, default=16, help="Batch size per training step")
+    parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate")
     parser.add_argument("--seed", type=int, default=1337, help="Random seed for reproducibility")
-    parser.add_argument("--eval_interval", type=int, default=50, help="Evaluation interval")
-    parser.add_argument("--eval_iters", type=int, default=10, help="Batches per evaluation")
-    parser.add_argument("--block_size", type=int, default=128, help="Context block size")
+    parser.add_argument("--block_size", type=int, default=128, help="Context sequence length")
     parser.add_argument("--n_layer", type=int, default=4, help="Number of transformer layers")
     parser.add_argument("--n_head", type=int, default=4, help="Number of attention heads")
     parser.add_argument("--n_embd", type=int, default=128, help="Embedding dimension")
@@ -309,8 +290,6 @@ def main(argv: list[str] | None = None) -> None:
         batch_size=args.batch_size,
         learning_rate=args.lr,
         seed=args.seed,
-        eval_interval=args.eval_interval,
-        eval_iters=args.eval_iters,
         block_size=args.block_size,
         n_layer=args.n_layer,
         n_head=args.n_head,
