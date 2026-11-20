@@ -14,9 +14,8 @@ import argparse
 from pathlib import Path
 import re
 import sys
-from typing import Dict, List, Any
-
-import httpx
+from typing import Any
+import urllib.request
 
 # Markers commonly used in Project Gutenberg plain text files
 START_MARKERS = [
@@ -117,9 +116,10 @@ def download_sample_books(raw_dir: Path) -> list[Path]:
         dest = raw_dir / filename
         if not dest.exists() or dest.stat().st_size == 0:
             print(f"  Fetching {filename}...")
-            r = httpx.get(url, timeout=30.0, follow_redirects=True)
-            r.raise_for_status()
-            dest.write_text(r.text, encoding="utf-8")
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=30.0) as resp:
+                content = resp.read().decode("utf-8")
+            dest.write_text(content, encoding="utf-8")
         else:
             print(f"  Already exists: {filename}")
         downloaded.append(dest)

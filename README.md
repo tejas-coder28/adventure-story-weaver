@@ -30,7 +30,6 @@ Trained on classic public-domain fantasy and adventure narratives from Project G
 - **Python 3.12+**
 - **PyTorch** (CPU or GPU)
 - **numpy** (matrix operations & numerical stability)
-- **httpx** (for downloading public-domain adventure texts)
 - **pytest** (for running the test suite)
 
 ---
@@ -301,7 +300,7 @@ adventure-story-weaver/
 ├── .gitignore                   # Git ignore file (excludes .env, checkpoints, etc.)
 ├── pytest.ini                   # Pytest configuration
 ├── README.md                    # Project documentation
-├── requirements.txt             # Project dependencies (httpx, numpy, pytest, torch)
+├── requirements.txt             # Project dependencies (numpy, pytest, torch)
 └── start.bat                    # Windows one-click interactive launcher
 ```
 
